@@ -2,6 +2,7 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 # Binaries for programs and plugins
+bedrock-lan-bridge
 *.exe
 *.exe~
 *.dll
@@ -30,3 +31,7 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Configuration files
+*.json
+!config.example.json

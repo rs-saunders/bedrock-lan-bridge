@@ -1,0 +1,10 @@
+{
+  "remoteServerIp": "100.73.4.8",
+  "remoteServerPort": 19132,
+  "localProxyIp": "0.0.0.0",
+  "localProxyPort": 19134,
+  "lanBroadcastPort": 19132,
+  "lanBroadcastIntervalMs": 1000,
+  "motdOverride": "",
+  "logLevel": "info"
+}
