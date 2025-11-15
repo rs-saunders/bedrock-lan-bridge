@@ -6,5 +6,13 @@
   "lanBroadcastPort": 19132,
   "lanBroadcastIntervalMs": 1000,
   "motdOverride": "",
-  "logLevel": "info"
+  "logLevel": "info",
+  "beaconEdition": "MCPE",
+  "beaconProtocolVersion": 685,
+  "beaconGameVersion": "1.21.2",
+  "beaconLevelName": "Bedrock LAN Bridge",
+  "beaconGameMode": "Survival",
+  "beaconServerGuid": "0x1122334455667788",
+  "beaconMaxPlayers": 8,
+  "beaconIpv6Port": 19132
 }
