@@ -134,6 +134,7 @@ func buildBedrockPong(info BeaconInfo) []byte {
 		info.Port6,
 	)
 
+	fmt.Printf("[beacon] Built payload: %s\n", payload)
 	data := []byte(payload)
 
 	buf := make([]byte, 35+len(data))
@@ -268,7 +269,7 @@ func queryRemoteServer(ip string, port int) (BeaconInfo, error) {
 	binary.BigEndian.PutUint64(ping[9+len(raknetMagic):], rand.Uint64())
 
 	_, _ = conn.Write(ping)
-	// fmt.Printf("[query] Ping sent to %s: %s\n", addr, string(ping))
+	fmt.Printf("[query] Ping sent to %s with GUID %x\n", addr, binary.BigEndian.Uint64(ping[9+len(raknetMagic):]))
 
 	// Read response
 	buf := make([]byte, 2048)
@@ -279,7 +280,7 @@ func queryRemoteServer(ip string, port int) (BeaconInfo, error) {
 	}
 
 	pong := string(buf[:n])
-	// fmt.Printf("[query] Ping response from %s: %s\n", addr, pong)
+	fmt.Printf("[query] Ping response from %s: %s\n", addr, pong)
 
 	parts := splitPing(pong)
 	if len(parts) < 6 {
@@ -294,6 +295,7 @@ func queryRemoteServer(ip string, port int) (BeaconInfo, error) {
 	info.MaxPlayers = atoiOrDefault(parts[5], 0)
 	if len(parts) > 6 {
 		info.ServerGUID = parseUint10(parts[6], 0)
+		fmt.Printf("[query] Parsed remote GUID: %d\n", info.ServerGUID)
 	}
 	if len(parts) > 7 {
 		info.LevelName = parts[7]
@@ -422,6 +424,7 @@ func startProxy(cfg Config) {
 				sess = session
 
 				go relayServerResponses(conn, clientKey, session, removeSession)
+				fmt.Printf("[proxy] New session %s -> %s (guid local)\n", clientKey, raddr.String())
 			} else {
 				sess.lastSeen = time.Now()
 			}
@@ -506,6 +509,7 @@ func startBeacon(cfg Config) {
 
 		for {
 			payload := fallback
+			payload.ServerGUID = guid
 
 			if info, err := queryRemoteServer(cfg.RemoteServerIp, cfg.RemoteServerPort); err != nil {
 				fmt.Printf("[beacon] failed to query remote server: %v\n", err)
@@ -579,7 +583,6 @@ func startBeacon(cfg Config) {
 				payload.MaxPlayers = fallback.MaxPlayers
 			}
 
-			payload.ServerGUID = guid
 			payload.Port4 = cfg.LocalProxyPort
 			ipv6Port := cfg.BeaconIPv6Port
 			if ipv6Port == 0 {
@@ -588,6 +591,8 @@ func startBeacon(cfg Config) {
 			payload.Port6 = ipv6Port
 
 			beacon := buildBedrockPong(payload)
+			fmt.Printf("[beacon] Broadcasting GUID %d, name %q, players %d/%d to ports v4=%d v6=%d\n",
+				payload.ServerGUID, payload.ServerName, payload.Players, payload.MaxPlayers, payload.Port4, payload.Port6)
 			conn.Write(beacon)
 
 			time.Sleep(interval)
