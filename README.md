@@ -125,8 +125,9 @@ On your Nintendo Switch:
 | `remoteServerPort`       | Usually 19132                             |
 | `localProxyIp`           | Usually `0.0.0.0`                         |
 | `localProxyPort`         | Local UDP port the bridge listens on      |
-| `lanBroadcastPort`       | Bedrock LAN port (19132)                  |
-| `lanBroadcastIntervalMs` | Beacon interval (default 1000ms)          |
+| `broadcastPort`          | Bedrock LAN port (19132)                  |
+| `broadcastIntervalMs`    | Beacon interval (default 1000ms)          |
+| `broadcastInterface`     | `auto`, interface name, or IPv4 to bind beacon source |
 | `logLevel`               | `info` / `debug`                          |
 | `beaconServerNameOverride` | Optional custom server name/MOTD        |
 | `beaconEditionOverride`          | Override edition string in LAN beacon (`MCPE`) |
@@ -139,6 +140,16 @@ On your Nintendo Switch:
 | `beaconIpv6PortOverride`         | IPv6 port advertised (defaults to proxy port) |
 
 Missing values fall back to defaults.
+
+The bridge automatically picks the first non-virtual, non-loopback interface with a private IPv4 address when `broadcastInterface` is set to `auto`. You can override it with an interface name or by specifying the exact IPv4 you want to bind to. For example:
+
+```json
+{
+  "broadcastInterface": "192.168.0.131",
+  "broadcastPort": 19132,
+  "broadcastIntervalMs": 3000
+}
+```
 
 ---
 

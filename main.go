@@ -61,8 +61,9 @@ type Config struct {
 	RemoteServerPort              int    `json:"remoteServerPort"`
 	LocalProxyIp                  string `json:"localProxyIp"`
 	LocalProxyPort                int    `json:"localProxyPort"`
-	LanBroadcastPort              int    `json:"lanBroadcastPort"`
-	LanBroadcastInterval          int    `json:"lanBroadcastIntervalMs"`
+	BroadcastPort                 int    `json:"broadcastPort"`
+	BroadcastIntervalMs           int    `json:"broadcastIntervalMs"`
+	BroadcastInterface            string `json:"broadcastInterface"`
 	LogLevel                      string `json:"logLevel"`
 	BeaconServerNameOverride      string `json:"beaconServerNameOverride"`
 	BeaconEditionOverride         string `json:"beaconEditionOverride"`
@@ -81,9 +82,10 @@ func loadConfig(path string) (Config, error) {
 		RemoteServerIp:                "",
 		RemoteServerPort:              19132,
 		LocalProxyIp:                  "0.0.0.0",
-		LocalProxyPort:                19134,
-		LanBroadcastPort:              19132,
-		LanBroadcastInterval:          1000,
+		LocalProxyPort:                19132,
+		BroadcastPort:                 19132,
+		BroadcastIntervalMs:           1000,
+		BroadcastInterface:            "auto",
 		BeaconServerNameOverride:      "",
 		LogLevel:                      "info",
 		BeaconEditionOverride:         "",
@@ -512,25 +514,290 @@ func relayServerResponses(localConn *net.UDPConn, key string, sess *proxySession
 // LAN BEACON BROADCASTER
 // -------------------------
 
-func startBeacon(cfg Config) {
-	bcast := &net.UDPAddr{
-		IP:   net.IPv4bcast,
-		Port: cfg.LanBroadcastPort,
+type interfaceBinding struct {
+	iface net.Interface
+	ip    net.IP
+	mask  net.IPMask
+}
+
+type broadcastTarget struct {
+	conn  *net.UDPConn
+	addr  *net.UDPAddr
+	label string
+}
+
+func (b *interfaceBinding) cidr() string {
+	if b == nil || b.ip == nil {
+		return ""
 	}
 
-	conn, err := net.DialUDP("udp", nil, bcast)
+	if b.mask == nil {
+		return b.ip.String()
+	}
+
+	ones, bits := b.mask.Size()
+	if bits == 0 {
+		return b.ip.String()
+	}
+
+	return fmt.Sprintf("%s/%d", b.ip.String(), ones)
+}
+
+func resolveInterfaceBinding(spec string) (*interfaceBinding, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		spec = "auto"
+	}
+
+	if strings.EqualFold(spec, "auto") {
+		return findAutoInterface()
+	}
+
+	if ip := net.ParseIP(spec); ip != nil {
+		ip = ip.To4()
+		if ip == nil {
+			return nil, fmt.Errorf("broadcast interface IP %q is not IPv4", spec)
+		}
+		return findInterfaceByIP(ip)
+	}
+
+	iface, err := net.InterfaceByName(spec)
+	if err != nil {
+		return nil, fmt.Errorf("unable to find interface %q: %w", spec, err)
+	}
+
+	ip, mask, err := firstIPv4Addr(*iface, false)
+	if err != nil {
+		return nil, fmt.Errorf("interface %q has no IPv4 address: %w", spec, err)
+	}
+
+	return &interfaceBinding{
+		iface: *iface,
+		ip:    ip,
+		mask:  mask,
+	}, nil
+}
+
+func findAutoInterface() (*interfaceBinding, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		ip, mask, err := firstIPv4Addr(iface, true)
+		if err != nil {
+			continue
+		}
+
+		return &interfaceBinding{
+			iface: iface,
+			ip:    ip,
+			mask:  mask,
+		}, nil
+	}
+
+	return nil, errors.New("no private IPv4 interfaces found")
+}
+
+func firstIPv4Addr(iface net.Interface, requirePrivate bool) (net.IP, net.IPMask, error) {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+
+		ip := ipNet.IP.To4()
+		if ip == nil {
+			continue
+		}
+
+		if requirePrivate && !isPrivateIPv4(ip) {
+			continue
+		}
+
+		return cloneIP(ip), cloneIPMask(ipNet.Mask), nil
+	}
+
+	if requirePrivate {
+		return nil, nil, errors.New("no private IPv4 address")
+	}
+
+	return nil, nil, errors.New("no IPv4 address")
+}
+
+func findInterfaceByIP(ip net.IP) (*interfaceBinding, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+
+			if ip4 := ipNet.IP.To4(); ip4 != nil && ip.Equal(ip4) {
+				return &interfaceBinding{
+					iface: iface,
+					ip:    cloneIP(ip4),
+					mask:  cloneIPMask(ipNet.Mask),
+				}, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("no interface found with IP %s", ip.String())
+}
+
+func buildBroadcastTargets(cfg Config, binding *interfaceBinding) ([]*broadcastTarget, error) {
+	if binding == nil || binding.ip == nil {
+		return nil, errors.New("no broadcast interface available")
+	}
+
+	destinations := []net.IP{net.IPv4bcast}
+	if bcast := computeBroadcastAddress(binding.ip, binding.mask); bcast != nil {
+		destinations = append(destinations, bcast)
+	}
+
+	seen := map[string]bool{}
+	targets := make([]*broadcastTarget, 0, len(destinations))
+
+	for _, ip := range destinations {
+		if ip == nil {
+			continue
+		}
+
+		key := ip.String()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		remote := &net.UDPAddr{IP: ip, Port: cfg.BroadcastPort}
+		localAddr := &net.UDPAddr{IP: binding.ip, Port: 0}
+
+		conn, err := net.DialUDP("udp4", localAddr, remote)
+		if err != nil {
+			for _, t := range targets {
+				t.conn.Close()
+			}
+			return nil, fmt.Errorf("failed to dial broadcast target %s: %w", remote, err)
+		}
+
+		targets = append(targets, &broadcastTarget{
+			conn:  conn,
+			addr:  remote,
+			label: key,
+		})
+	}
+
+	if len(targets) == 0 {
+		return nil, errors.New("no broadcast targets configured")
+	}
+
+	return targets, nil
+}
+
+func computeBroadcastAddress(ip net.IP, mask net.IPMask) net.IP {
+	v4 := ip.To4()
+	if v4 == nil || mask == nil || len(mask) != net.IPv4len {
+		return nil
+	}
+
+	out := make(net.IP, net.IPv4len)
+	for i := 0; i < net.IPv4len; i++ {
+		out[i] = v4[i] | ^mask[i]
+	}
+
+	return out
+}
+
+func isPrivateIPv4(ip net.IP) bool {
+	v4 := ip.To4()
+	if v4 == nil {
+		return false
+	}
+
+	switch {
+	case v4[0] == 10:
+		return true
+	case v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31:
+		return true
+	case v4[0] == 192 && v4[1] == 168:
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneIP(ip net.IP) net.IP {
+	if ip == nil {
+		return nil
+	}
+
+	cp := make(net.IP, len(ip))
+	copy(cp, ip)
+	return cp
+}
+
+func cloneIPMask(mask net.IPMask) net.IPMask {
+	if mask == nil {
+		return nil
+	}
+
+	cp := make(net.IPMask, len(mask))
+	copy(cp, mask)
+	return cp
+}
+
+func startBeacon(cfg Config) {
+	binding, err := resolveInterfaceBinding(cfg.BroadcastInterface)
 	if err != nil {
 		panic(err)
 	}
 
-	interval := time.Duration(cfg.LanBroadcastInterval) * time.Millisecond
+	targets, err := buildBroadcastTargets(cfg, binding)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("[beacon] Using interface %s (%s)\n", binding.iface.Name, binding.cidr())
+	for _, t := range targets {
+		fmt.Printf("[beacon] Broadcasting to %s:%d\n", t.addr.IP.String(), t.addr.Port)
+	}
+
+	interval := time.Duration(cfg.BroadcastIntervalMs) * time.Millisecond
 
 	fmt.Println("[beacon] Broadcasting LAN beacons…")
 
 	fallback := defaultBeaconInfo(cfg)
 
 	go func() {
-		defer conn.Close()
+		defer func() {
+			for _, t := range targets {
+				t.conn.Close()
+			}
+		}()
 
 		for {
 			payload := fallback
@@ -569,6 +836,9 @@ func startBeacon(cfg Config) {
 			payload.Players = info.Players
 			if info.MaxPlayers > 0 {
 				payload.MaxPlayers = info.MaxPlayers
+			}
+			if info.ServerGUID != 0 {
+				payload.ServerGUID = info.ServerGUID
 			}
 			if info.LevelName != "" {
 				payload.LevelName = info.LevelName
@@ -609,7 +879,12 @@ func startBeacon(cfg Config) {
 			beacon := buildBedrockPong(payload)
 			// fmt.Printf("[beacon] Broadcasting GUID %d, name %q, players %d/%d to ports v4=%d v6=%d\n",
 			// 	payload.ServerGUID, payload.ServerName, payload.Players, payload.MaxPlayers, payload.Port4, payload.Port6)
-			conn.Write(beacon)
+
+			for _, target := range targets {
+				if _, err := target.conn.Write(beacon); err != nil {
+					fmt.Printf("[beacon] Failed to broadcast to %s: %v\n", target.addr.String(), err)
+				}
+			}
 
 			time.Sleep(interval)
 		}
@@ -635,7 +910,7 @@ func main() {
 	fmt.Println("[init] Starting Bedrock LAN Bridge")
 	fmt.Printf("[init] Remote server: %s:%d\n", cfg.RemoteServerIp, cfg.RemoteServerPort)
 	fmt.Printf("[init] Local proxy: %s:%d\n", cfg.LocalProxyIp, cfg.LocalProxyPort)
-	fmt.Printf("[init] LAN broadcast port: %d\n", cfg.LanBroadcastPort)
+	fmt.Printf("[init] Broadcast port: %d\n", cfg.BroadcastPort)
 
 	startProxy(cfg)
 	startBeacon(cfg)

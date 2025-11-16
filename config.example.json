@@ -2,9 +2,10 @@
   "remoteServerIp": "100.73.4.8",
   "remoteServerPort": 19132,
   "localProxyIp": "0.0.0.0",
-  "localProxyPort": 19134,
-  "lanBroadcastPort": 19132,
-  "lanBroadcastIntervalMs": 1000,
+  "localProxyPort": 19132,
+  "broadcastPort": 19132,
+  "broadcastIntervalMs": 1000,
+  "broadcastInterface": "auto",
   "logLevel": "info",
   "beaconServerNameOverride": "",
   "beaconEditionOverride": "MCPE",
@@ -14,5 +15,5 @@
   "beaconGameModeOverride": "Survival",
   "beaconServerGuidOverride": "0x1122334455667788",
   "beaconMaxPlayersOverride": 8,
-  "beaconIpv6PortOverride": 19135
+  "beaconIpv6PortOverride": 19133
 }
