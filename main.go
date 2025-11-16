@@ -57,43 +57,43 @@ type proxySession struct {
 // -------------------------
 
 type Config struct {
-	RemoteServerIp        string `json:"remoteServerIp"`
-	RemoteServerPort      int    `json:"remoteServerPort"`
-	LocalProxyIp          string `json:"localProxyIp"`
-	LocalProxyPort        int    `json:"localProxyPort"`
-	LanBroadcastPort      int    `json:"lanBroadcastPort"`
-	LanBroadcastInterval  int    `json:"lanBroadcastIntervalMs"`
-	MotdOverride          string `json:"motdOverride"`
-	LogLevel              string `json:"logLevel"`
-	BeaconEdition         string `json:"beaconEdition"`
-	BeaconProtocolVersion int    `json:"beaconProtocolVersion"`
-	BeaconGameVersion     string `json:"beaconGameVersion"`
-	BeaconLevelName       string `json:"beaconLevelName"`
-	BeaconGameMode        string `json:"beaconGameMode"`
-	BeaconServerGuid      string `json:"beaconServerGuid"`
-	BeaconMaxPlayers      int    `json:"beaconMaxPlayers"`
-	BeaconIPv6Port        int    `json:"beaconIpv6Port"`
+	RemoteServerIp                string `json:"remoteServerIp"`
+	RemoteServerPort              int    `json:"remoteServerPort"`
+	LocalProxyIp                  string `json:"localProxyIp"`
+	LocalProxyPort                int    `json:"localProxyPort"`
+	LanBroadcastPort              int    `json:"lanBroadcastPort"`
+	LanBroadcastInterval          int    `json:"lanBroadcastIntervalMs"`
+	LogLevel                      string `json:"logLevel"`
+	BeaconServerNameOverride      string `json:"beaconServerNameOverride"`
+	BeaconEditionOverride         string `json:"beaconEditionOverride"`
+	BeaconProtocolVersionOverride int    `json:"beaconProtocolVersionOverride"`
+	BeaconGameVersionOverride     string `json:"beaconGameVersionOverride"`
+	BeaconLevelNameOverride       string `json:"beaconLevelNameOverride"`
+	BeaconGameModeOverride        string `json:"beaconGameModeOverride"`
+	BeaconServerGuidOverride      string `json:"beaconServerGuidOverride"`
+	BeaconMaxPlayersOverride      int    `json:"beaconMaxPlayersOverride"`
+	BeaconIPv6PortOverride        int    `json:"beaconIpv6PortOverride"`
 }
 
 func loadConfig(path string) (Config, error) {
 	// Default config
 	cfg := Config{
-		RemoteServerIp:        "",
-		RemoteServerPort:      19132,
-		LocalProxyIp:          "0.0.0.0",
-		LocalProxyPort:        19134,
-		LanBroadcastPort:      19132,
-		LanBroadcastInterval:  1000,
-		MotdOverride:          "",
-		LogLevel:              "info",
-		BeaconEdition:         "",
-		BeaconProtocolVersion: 0,
-		BeaconGameVersion:     "",
-		BeaconLevelName:       "",
-		BeaconGameMode:        "",
-		BeaconServerGuid:      defaultBeaconServerGUID,
-		BeaconMaxPlayers:      0,
-		BeaconIPv6Port:        0,
+		RemoteServerIp:                "",
+		RemoteServerPort:              19132,
+		LocalProxyIp:                  "0.0.0.0",
+		LocalProxyPort:                19134,
+		LanBroadcastPort:              19132,
+		LanBroadcastInterval:          1000,
+		BeaconServerNameOverride:      "",
+		LogLevel:                      "info",
+		BeaconEditionOverride:         "",
+		BeaconProtocolVersionOverride: 0,
+		BeaconGameVersionOverride:     "",
+		BeaconLevelNameOverride:       "",
+		BeaconGameModeOverride:        "",
+		BeaconServerGuidOverride:      defaultBeaconServerGUID,
+		BeaconMaxPlayersOverride:      0,
+		BeaconIPv6PortOverride:        0,
 	}
 
 	raw, err := os.ReadFile(path)
@@ -134,7 +134,7 @@ func buildBedrockPong(info BeaconInfo) []byte {
 		info.Port6,
 	)
 
-	fmt.Printf("[beacon] Built payload: %s\n", payload)
+	fmt.Printf("[beacon]  Built payload: %s\n", payload)
 	data := []byte(payload)
 
 	buf := make([]byte, 35+len(data))
@@ -190,46 +190,50 @@ func parseGUIDString(value string) (uint64, error) {
 	return strconv.ParseUint(value, 0, 64)
 }
 
-func defaultBeaconInfo(cfg Config, guid uint64) BeaconInfo {
-	name := cfg.MotdOverride
-	if name == "" {
-		name = cfg.RemoteServerIp
+func defaultBeaconInfo(cfg Config) BeaconInfo {
+
+	guid, err := parseGUIDString(cfg.BeaconServerGuidOverride)
+	if err != nil {
+		fmt.Printf("[beacon] invalid beaconServerGuid %q: %v — using default\n", cfg.BeaconServerGuidOverride, err)
+		guid, _ = strconv.ParseUint(defaultBeaconServerGUID, 0, 64)
 	}
+
+	name := cfg.BeaconServerNameOverride
 	if name == "" {
 		name = defaultBeaconServerName
 	}
 
-	edition := cfg.BeaconEdition
+	edition := cfg.BeaconEditionOverride
 	if edition == "" {
 		edition = defaultBeaconEdition
 	}
 
-	protocol := cfg.BeaconProtocolVersion
+	protocol := cfg.BeaconProtocolVersionOverride
 	if protocol == 0 {
 		protocol = defaultBeaconProtocolVersion
 	}
 
-	gameVersion := cfg.BeaconGameVersion
+	gameVersion := cfg.BeaconGameVersionOverride
 	if gameVersion == "" {
 		gameVersion = defaultBeaconGameVersion
 	}
 
-	level := cfg.BeaconLevelName
+	level := cfg.BeaconLevelNameOverride
 	if level == "" {
 		level = name
 	}
 
-	gameMode := cfg.BeaconGameMode
+	gameMode := cfg.BeaconGameModeOverride
 	if gameMode == "" {
 		gameMode = defaultBeaconGameMode
 	}
 
-	maxPlayers := cfg.BeaconMaxPlayers
+	maxPlayers := cfg.BeaconMaxPlayersOverride
 	if maxPlayers == 0 {
 		maxPlayers = defaultBeaconMaxPlayers
 	}
 
-	ipv6Port := cfg.BeaconIPv6Port
+	ipv6Port := cfg.BeaconIPv6PortOverride
 	if ipv6Port == 0 {
 		ipv6Port = cfg.LocalProxyPort
 	}
@@ -269,7 +273,7 @@ func queryRemoteServer(ip string, port int) (BeaconInfo, error) {
 	binary.BigEndian.PutUint64(ping[9+len(raknetMagic):], rand.Uint64())
 
 	_, _ = conn.Write(ping)
-	fmt.Printf("[query] Ping sent to %s with GUID %x\n", addr, binary.BigEndian.Uint64(ping[9+len(raknetMagic):]))
+	// fmt.Printf("[query] Ping sent to %s with GUID %x\n", addr, binary.BigEndian.Uint64(ping[9+len(raknetMagic):]))
 
 	// Read response
 	buf := make([]byte, 2048)
@@ -279,8 +283,11 @@ func queryRemoteServer(ip string, port int) (BeaconInfo, error) {
 		return info, errors.New("no ping response from server")
 	}
 
-	pong := string(buf[:n])
-	fmt.Printf("[query] Ping response from %s: %s\n", addr, pong)
+	pong, err := parsePongPayload(buf[:n])
+	if err != nil {
+		return info, err
+	}
+	// fmt.Printf("[query] Ping response from %s: %s\n", addr, pong)
 
 	parts := splitPing(pong)
 	if len(parts) < 6 {
@@ -332,6 +339,22 @@ func splitPing(s string) []string {
 
 	out = append(out, curr)
 	return out
+}
+
+func parsePongPayload(buf []byte) (string, error) {
+	if len(buf) < 35 {
+		return "", errors.New("ping response too short")
+	}
+
+	motdLen := int(binary.BigEndian.Uint16(buf[33:35]))
+	if 35+motdLen > len(buf) {
+		motdLen = len(buf) - 35
+	}
+	if motdLen < 0 {
+		return "", errors.New("invalid MOTD length")
+	}
+
+	return string(buf[35 : 35+motdLen]), nil
 }
 
 // -------------------------
@@ -467,13 +490,21 @@ func relayServerResponses(localConn *net.UDPConn, key string, sess *proxySession
 			return
 		}
 
+		if n > 0 && buf[0] == 0x1C {
+			if payload, err := parsePongPayload(buf[:n]); err == nil {
+				fmt.Printf("[proxy] Relaying pong to %s: %s\n", sess.client.String(), payload)
+			} else {
+				fmt.Printf("[proxy] Failed to parse pong for %s: %v\n", key, err)
+			}
+		} else if n > 0 {
+			fmt.Printf("[proxy] Relaying packet 0x%02X (%d bytes) to %s\n", buf[0], n, sess.client.String())
+		}
+
 		if _, err := localConn.WriteToUDP(buf[:n], sess.client); err != nil {
 			fmt.Printf("[proxy] Failed sending %d bytes to %s: %v\n", n, sess.client.String(), err)
 			cleanup(key)
 			return
 		}
-
-		fmt.Printf("[proxy] Relayed %d bytes of reply to %s\n", n, sess.client.String())
 	}
 }
 
@@ -496,103 +527,88 @@ func startBeacon(cfg Config) {
 
 	fmt.Println("[beacon] Broadcasting LAN beacons…")
 
-	guid, err := parseGUIDString(cfg.BeaconServerGuid)
-	if err != nil {
-		fmt.Printf("[beacon] invalid beaconServerGuid %q: %v — using default\n", cfg.BeaconServerGuid, err)
-		guid, _ = strconv.ParseUint(defaultBeaconServerGUID, 0, 64)
-	}
-
-	fallback := defaultBeaconInfo(cfg, guid)
+	fallback := defaultBeaconInfo(cfg)
 
 	go func() {
 		defer conn.Close()
 
 		for {
 			payload := fallback
-			payload.ServerGUID = guid
 
-			if info, err := queryRemoteServer(cfg.RemoteServerIp, cfg.RemoteServerPort); err != nil {
+			info, err := queryRemoteServer(cfg.RemoteServerIp, cfg.RemoteServerPort)
+			if err != nil {
 				fmt.Printf("[beacon] failed to query remote server: %v\n", err)
 				continue
-			} else {
-				if info.Edition != "" {
-					payload.Edition = info.Edition
-				}
-				if info.ServerName != "" {
-					payload.ServerName = info.ServerName
-				}
-				if info.ProtocolVersion != 0 {
-					payload.ProtocolVersion = info.ProtocolVersion
-				}
-				if info.GameVersion != "" {
-					payload.GameVersion = info.GameVersion
-				}
-				payload.Players = info.Players
-				if info.MaxPlayers > 0 {
-					payload.MaxPlayers = info.MaxPlayers
-				}
-				if info.LevelName != "" {
-					payload.LevelName = info.LevelName
-				}
-				if info.GameMode != "" {
-					payload.GameMode = info.GameMode
-				}
 			}
 
-			if cfg.MotdOverride != "" {
-				payload.ServerName = cfg.MotdOverride
+			fmt.Printf("[beacon] Remote payload: %s;%s;%d;%s;%d;%d;%d;%s;%s;%d;%d\n",
+				info.Edition,
+				info.ServerName,
+				info.ProtocolVersion,
+				info.GameVersion,
+				info.Players,
+				info.MaxPlayers,
+				info.ServerGUID,
+				info.LevelName,
+				info.GameMode,
+				info.Port4,
+				info.Port6,
+			)
+			if info.Edition != "" {
+				payload.Edition = info.Edition
 			}
-			if cfg.BeaconEdition != "" {
-				payload.Edition = cfg.BeaconEdition
+			if info.ServerName != "" {
+				payload.ServerName = info.ServerName
 			}
-			if cfg.BeaconProtocolVersion > 0 {
-				payload.ProtocolVersion = cfg.BeaconProtocolVersion
+			if info.ProtocolVersion != 0 {
+				payload.ProtocolVersion = info.ProtocolVersion
 			}
-			if cfg.BeaconGameVersion != "" {
-				payload.GameVersion = cfg.BeaconGameVersion
+			if info.GameVersion != "" {
+				payload.GameVersion = info.GameVersion
 			}
-			if cfg.BeaconLevelName != "" {
-				payload.LevelName = cfg.BeaconLevelName
+			payload.Players = info.Players
+			if info.MaxPlayers > 0 {
+				payload.MaxPlayers = info.MaxPlayers
 			}
-			if cfg.BeaconGameMode != "" {
-				payload.GameMode = cfg.BeaconGameMode
+			if info.LevelName != "" {
+				payload.LevelName = info.LevelName
 			}
-			if cfg.BeaconMaxPlayers > 0 {
-				payload.MaxPlayers = cfg.BeaconMaxPlayers
+			if info.GameMode != "" {
+				payload.GameMode = info.GameMode
 			}
 
-			if payload.ServerName == "" {
-				payload.ServerName = fallback.ServerName
+			if cfg.BeaconServerNameOverride != "" {
+				payload.ServerName = cfg.BeaconServerNameOverride
 			}
-			if payload.LevelName == "" {
-				payload.LevelName = payload.ServerName
+			if cfg.BeaconEditionOverride != "" {
+				payload.Edition = cfg.BeaconEditionOverride
 			}
-			if payload.Edition == "" {
-				payload.Edition = fallback.Edition
+			if cfg.BeaconProtocolVersionOverride > 0 {
+				payload.ProtocolVersion = cfg.BeaconProtocolVersionOverride
 			}
-			if payload.ProtocolVersion == 0 {
-				payload.ProtocolVersion = fallback.ProtocolVersion
+			if cfg.BeaconGameVersionOverride != "" {
+				payload.GameVersion = cfg.BeaconGameVersionOverride
 			}
-			if payload.GameVersion == "" {
-				payload.GameVersion = fallback.GameVersion
+			if cfg.BeaconLevelNameOverride != "" {
+				payload.LevelName = cfg.BeaconLevelNameOverride
 			}
-			if payload.GameMode == "" {
-				payload.GameMode = fallback.GameMode
+			if cfg.BeaconGameModeOverride != "" {
+				payload.GameMode = cfg.BeaconGameModeOverride
 			}
-			if payload.MaxPlayers == 0 {
-				payload.MaxPlayers = fallback.MaxPlayers
+			if cfg.BeaconMaxPlayersOverride > 0 {
+				payload.MaxPlayers = cfg.BeaconMaxPlayersOverride
 			}
 
 			payload.Port4 = cfg.LocalProxyPort
-			ipv6Port := cfg.BeaconIPv6Port
+			ipv6Port := cfg.BeaconIPv6PortOverride
 			if ipv6Port == 0 {
 				ipv6Port = cfg.LocalProxyPort
 			}
 			payload.Port6 = ipv6Port
 
 			beacon := buildBedrockPong(payload)
-			fmt.Printf("[beacon] Broadcasting GUID %d, name %q, players %d/%d to ports v4=%d v6=%d\n",
-				payload.ServerGUID, payload.ServerName, payload.Players, payload.MaxPlayers, payload.Port4, payload.Port6)
+			// fmt.Printf("[beacon] Broadcasting GUID %d, name %q, players %d/%d to ports v4=%d v6=%d\n",
+			// 	payload.ServerGUID, payload.ServerName, payload.Players, payload.MaxPlayers, payload.Port4, payload.Port6)
 			conn.Write(beacon)
 
 			time.Sleep(interval)

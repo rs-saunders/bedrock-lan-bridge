@@ -127,8 +127,16 @@ On your Nintendo Switch:
 | `localProxyPort`         | Local UDP port the bridge listens on      |
 | `lanBroadcastPort`       | Bedrock LAN port (19132)                  |
 | `lanBroadcastIntervalMs` | Beacon interval (default 1000ms)          |
-| `motdOverride`           | Optional custom MOTD                      |
 | `logLevel`               | `info` / `debug`                          |
+| `beaconServerNameOverride` | Optional custom server name/MOTD        |
+| `beaconEditionOverride`          | Override edition string in LAN beacon (`MCPE`) |
+| `beaconProtocolVersionOverride`  | Override protocol version advertised      |
+| `beaconGameVersionOverride`      | Override version string in beacon         |
+| `beaconLevelNameOverride`        | Custom world/level name shown             |
+| `beaconGameModeOverride`         | Game mode string (`Survival`)             |
+| `beaconServerGuidOverride`       | GUID used for beacon (decimal or `0x` value) |
+| `beaconMaxPlayersOverride`       | Max players fallback when remote ping fails |
+| `beaconIpv6PortOverride`         | IPv6 port advertised (defaults to proxy port) |
 
 Missing values fall back to defaults.
 
