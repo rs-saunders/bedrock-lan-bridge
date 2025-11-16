@@ -103,6 +103,27 @@ you may need a port redirect from 19132 → your proxy port.
 
 If running on a separate device → no redirect is needed.
 
+### PowerShell Execution Policy
+
+Windows blocks PowerShell scripts by default with *PSSecurityException: running scripts is disabled*.
+Either run the script through a one-off command:
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File .\bedrock-lan-bridge-nat.ps1 enable
+```
+
+…or permanently relax the policy for your user (recommended):
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+After applying one of the above you can invoke the script normally (e.g. `.\bedrock-lan-bridge-nat.ps1 enable`).
+
+> **Note:** UDP entries in `netsh interface portproxy` only work on Windows 11 24H2 (build 26100+) and newer Insider builds.  
+> Older Windows releases cannot redirect UDP this way, so the NAT helper fails with *The parameter is incorrect*.  
+> In that case run the bridge on a machine where port 19132 is free and set `localProxyPort` to 19132, or perform the redirect on Linux/macOS instead.
+
 ---
 
 ## 🧪 Testing
